@@ -22,6 +22,7 @@ const CellWidgets: React.FC = () => {
   return (
     <div className="fortune-cell-widgets" aria-hidden>
       {widgets.map((widget) => {
+
         const sheet = context.luckysheetfile.find(
           (item) => item.id === context.currentSheetId
         );
@@ -56,30 +57,37 @@ const CellWidgets: React.FC = () => {
         const [left] = colLocationByIndex(leftCol, context.visibledatacolumn);
         const [, right] = colLocationByIndex(
           rightCol,
+
           context.visibledatacolumn
         );
 
         const width = widget.width ?? right - left - 1;
         const height = widget.height ?? bottom - top - 1;
 
+
         const stopHandler = widget.passthroughEvents ? undefined : stopEvent;
         const pointerEvents = widget.passthroughEvents ? "none" : undefined;
+
 
         return (
           <div
             key={widget.id}
             className="fortune-cell-widget"
+
             onClick={stopHandler}
             onMouseDown={stopHandler}
             onDoubleClick={stopHandler}
             onKeyDown={stopHandler}
             onContextMenu={stopHandler}
+
             style={{
               left: left + (widget.offsetX ?? 0),
               top: top + (widget.offsetY ?? 0),
               width,
               height,
+
               pointerEvents,
+
             }}
           >
             {widget.node}
@@ -90,4 +98,6 @@ const CellWidgets: React.FC = () => {
   );
 };
 
+
 export default CellWidgets;
+
