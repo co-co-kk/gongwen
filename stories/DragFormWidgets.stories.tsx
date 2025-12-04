@@ -127,6 +127,9 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
   const [submitResult, setSubmitResult] = useState<string>("");
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
+  const [mode, setMode] = useState<"edit" | "preview">("edit");
+
+
   const onChange = useCallback((d: Sheet[]) => setData(d), []);
 
   const updateWidgetValue = useCallback((id: string, value: string) => {
@@ -206,6 +209,23 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
     removeWidgetsInSelection(currentSelection, currentSheetId);
   }, [activeSheetId, removeWidgetsInSelection]);
 
+
+  const clearSelectionContent = useCallback(() => {
+    const currentSelection = workbookRef.current?.getSelection();
+    const currentSheetId = workbookRef.current?.getSheet()?.id || activeSheetId;
+    if (!currentSelection?.length || !currentSheetId) return;
+
+    currentSelection.forEach((range) => {
+      for (let r = range.row[0]; r <= range.row[1]; r += 1) {
+        for (let c = range.column[0]; c <= range.column[1]; c += 1) {
+          workbookRef.current?.clearCell(r, c, { sheetId: currentSheetId });
+        }
+      }
+    });
+
+    removeWidgetsInSelection(currentSelection, currentSheetId);
+  }, [activeSheetId, removeWidgetsInSelection]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Delete" || event.key === "Backspace") {
@@ -247,6 +267,13 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
           removeWidgets((w) => w.sheetId === currentSheetId && w.r === row && w.c === column);
         }
       },
+      afterActivateSheet: (id: string) => {
+        setActiveSheetId(id);
+        setSelection(undefined);
+      },
+      afterAddSheet: (sheet: Sheet) => {
+        setActiveSheetId(sheet.id);
+      },
     }),
     [activeSheetId, removeWidgets]
   );
@@ -256,6 +283,10 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
       widgets.map((widget) => {
         const template = templates[widget.template];
         const minHeight = 32;
+
+
+        const readonly = mode === "edit";
+        const pointerEvents = readonly ? "none" : "auto";
 
         let node: React.ReactNode = null;
         if (widget.template === "text") {
@@ -268,7 +299,9 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
               onMouseDown={stopEvent}
               onDoubleClick={stopEvent}
               onKeyDown={stopEvent}
-              onChange={(e) => updateWidgetValue(widget.id, e.target.value)}
+
+              onChange={(e) => !readonly && updateWidgetValue(widget.id, e.target.value)}
+            
               style={{
                 width: "100%",
                 height: "100%",
@@ -276,6 +309,10 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
                 borderRadius: 6,
                 padding: "0 8px",
                 boxSizing: "border-box",
+
+                pointerEvents,
+                background: readonly ? "#fafafa" : "#fff",
+
               }}
             />
           );
@@ -287,7 +324,10 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
               onMouseDown={stopEvent}
               onDoubleClick={stopEvent}
               onKeyDown={stopEvent}
-              onChange={(e) => updateWidgetValue(widget.id, e.target.value)}
+
+              onChange={(e) => !readonly && updateWidgetValue(widget.id, e.target.value)}
+              disabled={readonly}
+
               style={{
                 width: "100%",
                 height: "100%",
@@ -295,7 +335,10 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
                 borderRadius: 6,
                 padding: "0 8px",
                 boxSizing: "border-box",
-                background: "#fff",
+
+                background: readonly ? "#fafafa" : "#fff",
+                pointerEvents,
+
               }}
             >
               <option value="" disabled>
@@ -326,6 +369,9 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+
+                pointerEvents,
+
               }}
             >
               {template.label}
@@ -340,6 +386,9 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
           r: widget.r,
           c: widget.c,
           sheetId: widget.sheetId,
+
+          passthroughEvents: readonly,
+
           node: (
             <div
               style={{
@@ -352,6 +401,9 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
                 boxShadow: "0 4px 10px rgba(0,0,0,0.08)",
                 overflow: "hidden",
                 position: "relative",
+
+                opacity: readonly ? 0.8 : 1,
+
               }}
             >
               {widget.required && (
@@ -367,7 +419,25 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
                   *
                 </span>
               )}
-              {node}
+
+              {readonly ? (
+                <div
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "0 10px",
+                    color: template.color,
+                    boxSizing: "border-box",
+                    background: "#fafafa",
+                  }}
+                >
+                  {`${template.label}${widget.required ? " (必填)" : ""}`}
+                </div>
+              ) : (
+                node
+              )}
               {hasError && (
                 <div
                   style={{
@@ -388,7 +458,9 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
           ),
         } as CellWidget;
       }),
-    [updateWidgetValue, validationErrors, widgets]
+
+    [mode, updateWidgetValue, validationErrors, widgets]
+
   );
 
   const palette = useMemo(
@@ -450,6 +522,39 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
         <p style={{ color: "#666", fontSize: 12, marginTop: 0 }}>
           先选择目标单元格，再拖拽或点击组件放置。Delete/Backspace 或“清除内容”可以移除选区内的组件。
         </p>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <button
+            type="button"
+            onClick={() => setMode((prev) => (prev === "edit" ? "preview" : "edit"))}
+            style={{
+              flex: 1,
+              padding: "8px 10px",
+              background: mode === "preview" ? "#1677ff" : "#f0f0f0",
+              color: mode === "preview" ? "#fff" : "#333",
+              border: "none",
+              borderRadius: 6,
+              cursor: "pointer",
+            }}
+          >
+            {mode === "preview" ? "切换到编辑占位" : "切换到预览填写"}
+          </button>
+          <button
+            type="button"
+            onClick={clearSelectionContent}
+            style={{
+              padding: "8px 10px",
+              background: "#ff4d4f",
+              color: "#fff",
+              border: "none",
+              borderRadius: 6,
+              cursor: "pointer",
+            }}
+          >
+            清除内容
+          </button>
+        </div>
+
         {palette}
         <button
           type="button"
@@ -491,10 +596,13 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
             <div>选择一个单元格以放置组件。</div>
           )}
           <div style={{ marginTop: 8 }}>
-            支持：多选插入、双击/输入/选择交互、Delete/清除内容 删除组件。
+
+            当前模式：{mode === "preview" ? "预览可填写" : "编辑占位"}；支持：多选插入、双击/输入/选择交互（预览模式）、Delete/清除内容 删除组件。
+
           </div>
         </div>
       </div>
     </div>
   );
+
 };

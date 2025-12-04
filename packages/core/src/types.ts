@@ -199,6 +199,8 @@ export type CellWidget = {
   /** Additional offset relative to the top-left corner of the target cell. */
   offsetX?: number;
   offsetY?: number;
+  passthroughEvents?: boolean;
+
 };
 
 export type LinkCardProps = {
