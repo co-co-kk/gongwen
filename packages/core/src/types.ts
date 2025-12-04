@@ -1,4 +1,5 @@
 import { Patch as ImmerPatch } from "immer";
+import React from "react";
 import { PatchOptions } from "./utils";
 
 export type Op = {
@@ -179,6 +180,25 @@ export type SearchResult = {
   sheetId: string;
   cellPosition: string;
   value: string;
+};
+
+export type CellWidget = {
+  id: string;
+  r: number;
+  c: number;
+  /** Target sheet id, defaults to the current sheet when omitted */
+  sheetId?: string;
+  /**
+   * The element rendered inside the widget container. React nodes are allowed
+   * because the React package consumes this type directly.
+   */
+  node: React.ReactNode;
+  /** Optional custom size for the widget container. */
+  width?: number;
+  height?: number;
+  /** Additional offset relative to the top-left corner of the target cell. */
+  offsetX?: number;
+  offsetY?: number;
 };
 
 export type LinkCardProps = {
