@@ -477,6 +477,7 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
           }
           draftCtx.lang = mergedSettings.lang;
           draftCtx.allowEdit = mergedSettings.allowEdit;
+          draftCtx.cellWidgets = mergedSettings.cellWidgets;
           draftCtx.hooks = mergedSettings.hooks;
           // draftCtx.fontList = mergedSettings.fontList;
           if (_.isEmpty(draftCtx.currentSheetId)) {
@@ -592,6 +593,7 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
       mergedSettings.devicePixelRatio,
       mergedSettings.lang,
       mergedSettings.allowEdit,
+      mergedSettings.cellWidgets,
       mergedSettings.hooks,
       mergedSettings.generateSheetId,
       setContextWithProduce,
