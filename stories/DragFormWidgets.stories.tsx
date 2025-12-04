@@ -19,6 +19,7 @@ type WidgetInstance = {
   id: string;
   r: number;
   c: number;
+  sheetId: string;
   template: WidgetTemplateKey;
   value: string;
   required?: boolean;
@@ -59,6 +60,49 @@ const selectionContains = (
   selections?: Selection[]
 ): boolean => selections?.some((s) => withinSelection(widget, s)) ?? false;
 
+const findMergeAnchor = (
+  sheet: Sheet | undefined,
+  row: number,
+  column: number
+): { r: number; c: number } => {
+  const merge = sheet?.config?.merge;
+  if (!merge) return { r: row, c: column };
+
+  for (const key of Object.keys(merge)) {
+    const block = merge[key];
+    if (
+      row >= block.r &&
+      row < block.r + block.rs &&
+      column >= block.c &&
+      column < block.c + block.cs
+    ) {
+      return { r: block.r, c: block.c };
+    }
+  }
+
+  return { r: row, c: column };
+};
+
+const resolveTargetCells = (ranges: Selection[], sheet: Sheet | undefined) => {
+  const targets: { r: number; c: number }[] = [];
+  const seen = new Set<string>();
+
+  ranges.forEach((range) => {
+    for (let r = range.row[0]; r <= range.row[1]; r += 1) {
+      for (let c = range.column[0]; c <= range.column[1]; c += 1) {
+        const anchor = findMergeAnchor(sheet, r, c);
+        const key = `${anchor.r}-${anchor.c}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          targets.push(anchor);
+        }
+      }
+    }
+  });
+
+  return targets;
+};
+
 const isCellEmpty = (value: any) =>
   value === undefined || value === null || value === "" || (typeof value === "object" && Object.keys(value).length === 0);
 
@@ -79,6 +123,7 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
   ]);
   const [widgets, setWidgets] = useState<WidgetInstance[]>([]);
   const [selection, setSelection] = useState<Selection[] | undefined>(undefined);
+  const [activeSheetId, setActiveSheetId] = useState<string | undefined>(undefined);
   const [submitResult, setSubmitResult] = useState<string>("");
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
@@ -93,30 +138,29 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
   }, []);
 
   const removeWidgetsInSelection = useCallback(
-    (ranges?: Selection[]) => {
+    (ranges?: Selection[], sheetId?: string) => {
       if (!ranges?.length) return;
-      removeWidgets((w) => selectionContains({ ...w, node: null } as CellWidget, ranges));
+      removeWidgets(
+        (w) => w.sheetId === sheetId && selectionContains({ ...w, node: null } as CellWidget, ranges)
+      );
     },
     [removeWidgets]
   );
 
   const createWidgetInstances = useCallback(
-    (templateKey: WidgetTemplateKey, ranges: Selection[]) => {
+    (templateKey: WidgetTemplateKey, sheetId: string, targets: { r: number; c: number }[]) => {
       const instances: WidgetInstance[] = [];
-      ranges.forEach((target) => {
-        for (let r = target.row[0]; r <= target.row[1]; r += 1) {
-          for (let c = target.column[0]; c <= target.column[1]; c += 1) {
-            const newId = `${templateKey}-${r}-${c}-${Date.now()}-${Math.random()}`;
-            instances.push({
-              id: newId,
-              r,
-              c,
-              template: templateKey,
-              value: "",
-              required: templates[templateKey].required,
-            });
-          }
-        }
+      targets.forEach((target) => {
+        const newId = `${templateKey}-${target.r}-${target.c}-${sheetId}-${Date.now()}-${Math.random()}`;
+        instances.push({
+          id: newId,
+          r: target.r,
+          c: target.c,
+          sheetId,
+          template: templateKey,
+          value: "",
+          required: templates[templateKey].required,
+        });
       });
       return instances;
     },
@@ -126,17 +170,22 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
   const addWidgetAtSelection = useCallback(
     (templateKey: WidgetTemplateKey) => {
       const currentSelection = workbookRef.current?.getSelection();
-      if (!currentSelection?.length) return;
+      const currentSheet = workbookRef.current?.getSheet();
+      const sheetId = currentSheet?.id || activeSheetId;
+      if (!currentSelection?.length || !sheetId) return;
 
       setWidgets((prev) => {
-        const instances = createWidgetInstances(templateKey, currentSelection);
+        const targets = resolveTargetCells(currentSelection, currentSheet);
+        const instances = createWidgetInstances(templateKey, sheetId, targets);
         // Remove existing widgets that collide with the new cells so they get replaced.
         const occupied = new Set(instances.map((w) => `${w.r}-${w.c}`));
-        const remaining = prev.filter((w) => !occupied.has(`${w.r}-${w.c}`));
+        const remaining = prev.filter(
+          (w) => w.sheetId !== sheetId || !occupied.has(`${w.r}-${w.c}`)
+        );
         return [...remaining, ...instances];
       });
     },
-    [createWidgetInstances]
+    [activeSheetId, createWidgetInstances]
   );
 
   const handleDrop = useCallback(
@@ -152,9 +201,10 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
 
   const handleDelete = useCallback(() => {
     const currentSelection = workbookRef.current?.getSelection();
-    if (!currentSelection?.length) return;
-    removeWidgetsInSelection(currentSelection);
-  }, [removeWidgetsInSelection]);
+    const currentSheetId = workbookRef.current?.getSheet()?.id || activeSheetId;
+    if (!currentSelection?.length || !currentSheetId) return;
+    removeWidgetsInSelection(currentSelection, currentSheetId);
+  }, [activeSheetId, removeWidgetsInSelection]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -166,9 +216,17 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [handleDelete]);
 
+  useEffect(() => {
+    const currentSheetId = workbookRef.current?.getSheet()?.id;
+    if (currentSheetId && currentSheetId !== activeSheetId) {
+      setActiveSheetId(currentSheetId);
+    }
+  }, [activeSheetId, data]);
+
   const hooks = useMemo(
     () => ({
       afterSelectionChange: (_sheetId: string, newSelection: Selection) => {
+        setActiveSheetId((prev) => prev ?? _sheetId);
         setSelection((prev) => {
           if (!prev?.length) return [newSelection];
           const [first, ...rest] = prev;
@@ -184,12 +242,13 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
         });
       },
       afterUpdateCell: (row: number, column: number, _oldValue: any, newValue: any) => {
-        if (isCellEmpty(newValue)) {
-          removeWidgets((w) => w.r === row && w.c === column);
+        const currentSheetId = workbookRef.current?.getSheet()?.id || activeSheetId;
+        if (isCellEmpty(newValue) && currentSheetId) {
+          removeWidgets((w) => w.sheetId === currentSheetId && w.r === row && w.c === column);
         }
       },
     }),
-    [removeWidgets]
+    [activeSheetId, removeWidgets]
   );
 
   const renderedWidgets: CellWidget[] = useMemo(
@@ -280,6 +339,7 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
           id: widget.id,
           r: widget.r,
           c: widget.c,
+          sheetId: widget.sheetId,
           node: (
             <div
               style={{
