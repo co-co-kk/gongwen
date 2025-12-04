@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import React from "react";
-import { Sheet, Selection, CellMatrix, Cell } from "./types";
+import { CellWidget, Sheet, Selection, CellMatrix, Cell } from "./types";
 
 export type Hooks = {
   beforeUpdateCell?: (r: number, c: number, value: any) => boolean;
@@ -156,6 +156,7 @@ export type Settings = {
     onClick?: (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => void;
   }[];
   currency?: string;
+  cellWidgets?: CellWidget[];
 };
 
 export const defaultSettings: Required<Settings> = {
@@ -288,4 +289,5 @@ export const defaultSettings: Required<Settings> = {
   hooks: {},
   customToolbarItems: [],
   currency: "¥",
+  cellWidgets: [],
 };
