@@ -17,6 +17,7 @@ import {
   DataRegulationProps,
   ConditionRulesProps,
   GlobalCache,
+  CellWidget,
 } from "./types";
 import { getSheetIndex } from "./utils";
 
@@ -46,6 +47,7 @@ export type Context = {
   insertedImgs?: Image[];
   editingInsertedImgs?: Image;
   activeImg?: string;
+  cellWidgets?: CellWidget[];
   presences?: Presence[];
   showSearch?: boolean;
   showReplace?: boolean;
@@ -248,6 +250,7 @@ export function defaultContext(refs: RefValues): Context {
       type: "",
       singleSelect: false,
     },
+    cellWidgets: [],
 
     dataVerification: {
       selectStatus: false,

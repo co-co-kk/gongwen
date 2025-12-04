@@ -51,6 +51,7 @@ import RangeDialog from "../DataVerification/RangeDialog";
 import { useDialog } from "../../hooks/useDialog";
 import SVGIcon from "../SVGIcon";
 import DropDownList from "../DataVerification/DropdownList";
+import CellWidgets from "./CellWidgets";
 
 const SheetOverlay: React.FC = () => {
   const { context, setContext, settings, refs } = useContext(WorkbookContext);
@@ -471,9 +472,9 @@ const SheetOverlay: React.FC = () => {
   useEffect(() => {
     if (context.sheetFocused) {
       setLastRangeText(String(rangeText));
-      setLastCellValue(String(cellValue()));
+      setLastCellValue(String(computedCellValue));
     }
-  }, [context.sheetFocused]); // Runs only when sheet focus toggles
+  }, [computedCellValue, context.sheetFocused, rangeText]); // Runs only when sheet focus toggles
 
   return (
     <main
@@ -798,7 +799,8 @@ const SheetOverlay: React.FC = () => {
             <LinkEditCard {...context.linkCard} />
           )}
           {context.rangeDialog?.show && <RangeDialog />}
-          <FilterOptions getContainer={() => containerRef.current!} />
+          <FilterOptions />
+          <CellWidgets />
           <InputBox />
           <NotationBoxes />
           <div id="luckysheet-multipleRange-show" />
