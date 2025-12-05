@@ -114,6 +114,7 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
   const workbookRef = useRef<WorkbookInstance>(null);
   const [data, setData] = useState<Sheet[]>([
     {
+      id: "sheet-1",
       name: "Sheet1",
       order: 0,
       column: 12,
@@ -129,8 +130,14 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
 
   const [mode, setMode] = useState<"edit" | "preview">("edit");
 
-
   const onChange = useCallback((d: Sheet[]) => setData(d), []);
+
+  useEffect(() => {
+    if (!activeSheetId && data.length > 0 && data[0].id) {
+      setActiveSheetId(data[0].id);
+    }
+  }, [activeSheetId, data]);
+
 
   const updateWidgetValue = useCallback((id: string, value: string) => {
     setWidgets((prev) => prev.map((w) => (w.id === id ? { ...w, value } : w)));
@@ -209,7 +216,6 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
     removeWidgetsInSelection(currentSelection, currentSheetId);
   }, [activeSheetId, removeWidgetsInSelection]);
 
-
   const clearSelectionContent = useCallback(() => {
     const currentSelection = workbookRef.current?.getSelection();
     const currentSheetId = workbookRef.current?.getSheet()?.id || activeSheetId;
@@ -284,7 +290,6 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
         const template = templates[widget.template];
         const minHeight = 32;
 
-
         const readonly = mode === "edit";
         const pointerEvents = readonly ? "none" : "auto";
 
@@ -301,7 +306,8 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
               onKeyDown={stopEvent}
 
               onChange={(e) => !readonly && updateWidgetValue(widget.id, e.target.value)}
-            
+              readOnly={readonly}
+
               style={{
                 width: "100%",
                 height: "100%",
@@ -369,9 +375,7 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-
                 pointerEvents,
-
               }}
             >
               {template.label}
@@ -386,9 +390,7 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
           r: widget.r,
           c: widget.c,
           sheetId: widget.sheetId,
-
           passthroughEvents: readonly,
-
           node: (
             <div
               style={{
@@ -401,9 +403,7 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
                 boxShadow: "0 4px 10px rgba(0,0,0,0.08)",
                 overflow: "hidden",
                 position: "relative",
-
                 opacity: readonly ? 0.8 : 1,
-
               }}
             >
               {widget.required && (
@@ -419,7 +419,6 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
                   *
                 </span>
               )}
-
               {readonly ? (
                 <div
                   style={{
@@ -458,7 +457,6 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
           ),
         } as CellWidget;
       }),
-
     [mode, updateWidgetValue, validationErrors, widgets]
 
   );
@@ -522,7 +520,6 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
         <p style={{ color: "#666", fontSize: 12, marginTop: 0 }}>
           先选择目标单元格，再拖拽或点击组件放置。Delete/Backspace 或“清除内容”可以移除选区内的组件。
         </p>
-
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <button
             type="button"
@@ -554,7 +551,6 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
             清除内容
           </button>
         </div>
-
         {palette}
         <button
           type="button"
@@ -596,13 +592,10 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
             <div>选择一个单元格以放置组件。</div>
           )}
           <div style={{ marginTop: 8 }}>
-
             当前模式：{mode === "preview" ? "预览可填写" : "编辑占位"}；支持：多选插入、双击/输入/选择交互（预览模式）、Delete/清除内容 删除组件。
-
           </div>
         </div>
       </div>
     </div>
   );
-
 };
