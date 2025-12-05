@@ -13,7 +13,7 @@ export default {
   component: Workbook,
 } as Meta<typeof Workbook>;
 
-type WidgetTemplateKey = "text" | "select" | "note";
+type WidgetTemplateKey = "text" | "select" | "note" | "upload";
 
 type WidgetInstance = {
   id: string;
@@ -23,6 +23,7 @@ type WidgetInstance = {
   template: WidgetTemplateKey;
   value: string;
   required?: boolean;
+  assets?: string[];
 };
 
 type TemplateConfig = {
@@ -31,6 +32,8 @@ type TemplateConfig = {
   required?: boolean;
   placeholder?: string;
   options?: string[];
+  editHeight?: number;
+  previewHeight?: number;
 };
 
 const templates: Record<WidgetTemplateKey, TemplateConfig> = {
@@ -39,14 +42,25 @@ const templates: Record<WidgetTemplateKey, TemplateConfig> = {
     color: "#3478f6",
     required: true,
     placeholder: "请输入内容",
+    editHeight: 30,
+    previewHeight: 40,
   },
   select: {
     label: "下拉框",
     color: "#52c41a",
     options: ["选项A", "选项B", "选项C"],
     placeholder: "请选择",
+    editHeight: 30,
+    previewHeight: 40,
   },
-  note: { label: "备注标签", color: "#fa8c16" },
+  note: { label: "备注标签", color: "#fa8c16", editHeight: 28, previewHeight: 36 },
+  upload: {
+    label: "图片上传",
+    color: "#722ed1",
+    placeholder: "上传图片",
+    editHeight: 30,
+    previewHeight: 140,
+  },
 };
 
 const withinSelection = (widget: CellWidget, selection: Selection): boolean => {
@@ -106,10 +120,6 @@ const resolveTargetCells = (ranges: Selection[], sheet: Sheet | undefined) => {
 const isCellEmpty = (value: any) =>
   value === undefined || value === null || value === "" || (typeof value === "object" && Object.keys(value).length === 0);
 
-const stopEvent = (e: React.SyntheticEvent) => {
-  e.stopPropagation();
-};
-
 export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
   const workbookRef = useRef<WorkbookInstance>(null);
   const [data, setData] = useState<Sheet[]>([
@@ -127,8 +137,8 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
   const [activeSheetId, setActiveSheetId] = useState<string | undefined>(undefined);
   const [submitResult, setSubmitResult] = useState<string>("");
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
-
   const [mode, setMode] = useState<"edit" | "preview">("edit");
+  const [managerCell, setManagerCell] = useState<{ r: number; c: number; sheetId: string } | null>(null);
 
   const onChange = useCallback((d: Sheet[]) => setData(d), []);
 
@@ -183,6 +193,7 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
           template: templateKey,
           value: "",
           required: templates[templateKey].required,
+          assets: templateKey === "upload" ? [] : undefined,
         });
       });
       return instances;
@@ -200,15 +211,11 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
       setWidgets((prev) => {
         const targets = resolveTargetCells(currentSelection, currentSheet);
         const instances = createWidgetInstances(templateKey, sheetId, targets);
-        // Remove existing widgets that collide with the new cells so they get replaced.
-        const occupied = new Set(instances.map((w) => `${w.r}-${w.c}`));
-        const remaining = prev.filter(
-          (w) => w.sheetId !== sheetId || !occupied.has(`${w.r}-${w.c}`)
-        );
-        return [...remaining, ...instances];
+        // Allow multiple widgets per cell; just append to the existing list for the same cell.
+        return [...prev, ...instances];
       });
     },
-    [activeSheetId, createWidgetInstances]
+    [activeSheetId, createWidgetInstances, getCurrentSheet]
   );
 
   const handleDrop = useCallback(
@@ -227,7 +234,7 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
     const currentSheetId = getCurrentSheetId();
     if (!currentSelection?.length || !currentSheetId) return;
     removeWidgetsInSelection(currentSelection, currentSheetId);
-  }, [activeSheetId, getCurrentSheetId, removeWidgetsInSelection]);
+  }, [getCurrentSheetId, removeWidgetsInSelection]);
 
   const clearSelectionContent = useCallback(() => {
     const currentSelection = workbookRef.current?.getSelection();
@@ -243,7 +250,8 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
     });
 
     removeWidgetsInSelection(currentSelection, currentSheetId);
-  }, [activeSheetId, removeWidgetsInSelection]);
+    setManagerCell(null);
+  }, [getCurrentSheetId, removeWidgetsInSelection]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -279,6 +287,7 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
           }
           return [newSelection, ...rest];
         });
+        setManagerCell(null);
       },
       afterUpdateCell: (row: number, column: number, _oldValue: any, newValue: any) => {
         const currentSheetId = getCurrentSheetId();
@@ -289,6 +298,7 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
       afterActivateSheet: (id: string) => {
         setActiveSheetId(id);
         setSelection(undefined);
+        setManagerCell(null);
       },
       afterAddSheet: (sheet: Sheet) => {
         setActiveSheetId(sheet.id);
@@ -297,12 +307,36 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
     [activeSheetId, getCurrentSheetId, removeWidgets]
   );
 
-  const renderedWidgets: CellWidget[] = useMemo(
-    () =>
-      widgets.map((widget) => {
-        const template = templates[widget.template];
-        const minHeight = 32;
+  const groupedWidgets = useMemo(() => {
+    const map = new Map<string, WidgetInstance[]>();
+    widgets.forEach((widget) => {
+      const key = `${widget.sheetId}-${widget.r}-${widget.c}`;
+      map.set(key, [...(map.get(key) || []), widget]);
+    });
+    return Array.from(map.entries()).map(([key, group]) => ({
+      key,
+      cell: { sheetId: group[0].sheetId, r: group[0].r, c: group[0].c },
+      items: group,
+    }));
+  }, [widgets]);
 
+  const getWidgetHeights = useCallback((widget: WidgetInstance) => {
+    const cfg = templates[widget.template];
+    const editHeight = cfg.editHeight ?? 30;
+    const previewBase = cfg.previewHeight ?? 40;
+    if (widget.template === "upload" && widget.assets?.length) {
+      return {
+        edit: editHeight,
+        preview: previewBase + (widget.assets.length - 1) * 110,
+      };
+    }
+    return { edit: editHeight, preview: previewBase };
+  }, []);
+
+  const renderedWidgets: CellWidget[] = useMemo(() => {
+    return groupedWidgets.map((group) => {
+      const children = group.items.map((widget) => {
+        const template = templates[widget.template];
         const readonly = mode === "edit";
         const pointerEvents = readonly ? "none" : "auto";
 
@@ -313,10 +347,6 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
               type="text"
               value={widget.value}
               placeholder={template.placeholder}
-              onClick={stopEvent}
-              onMouseDown={stopEvent}
-              onDoubleClick={stopEvent}
-              onKeyDown={stopEvent}
               onChange={(e) => !readonly && updateWidgetValue(widget.id, e.target.value)}
               readOnly={readonly}
               style={{
@@ -335,10 +365,6 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
           node = (
             <select
               value={widget.value}
-              onClick={stopEvent}
-              onMouseDown={stopEvent}
-              onDoubleClick={stopEvent}
-              onKeyDown={stopEvent}
               onChange={(e) => !readonly && updateWidgetValue(widget.id, e.target.value)}
               disabled={readonly}
               style={{
@@ -362,13 +388,78 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
               ))}
             </select>
           );
+        } else if (widget.template === "upload") {
+          const assets = widget.assets ?? [];
+          node = (
+            <div
+              style={{
+                width: "100%",
+                height: "100%",
+                border: `1px dashed ${template.color}`,
+                borderRadius: 8,
+                padding: 8,
+                boxSizing: "border-box",
+                background: readonly ? "#fafafa" : "#fff",
+                pointerEvents,
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
+              }}
+            >
+              {assets.length === 0 && (
+                <div style={{ color: template.color, fontSize: 12 }}>{template.placeholder}</div>
+              )}
+              {assets.map((url, idx) => (
+                <div
+                  key={`${url}-${idx}`}
+                  style={{
+                    width: 80,
+                    height: 80,
+                    borderRadius: 6,
+                    overflow: "hidden",
+                    background: "#f5f5f5",
+                    border: `1px solid ${template.color}`,
+                  }}
+                >
+                  <img
+                    src={url}
+                    alt="upload"
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
+                </div>
+              ))}
+              {!readonly && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const newAsset = `https://picsum.photos/seed/${Math.round(Math.random() * 10000)}/160`;
+                    setWidgets((prev) =>
+                      prev.map((item) =>
+                        item.id === widget.id
+                          ? { ...item, assets: [...(item.assets || []), newAsset] }
+                          : item
+                      )
+                    );
+                  }}
+                  style={{
+                    padding: "6px 10px",
+                    border: `1px solid ${template.color}`,
+                    borderRadius: 6,
+                    background: "#fff",
+                    color: template.color,
+                    cursor: "pointer",
+                    fontSize: 12,
+                  }}
+                >
+                  + 添加图片
+                </button>
+              )}
+            </div>
+          );
         } else {
           node = (
             <div
-              onClick={stopEvent}
-              onMouseDown={stopEvent}
-              onDoubleClick={stopEvent}
-              onKeyDown={stopEvent}
               style={{
                 width: "100%",
                 height: "100%",
@@ -390,80 +481,101 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
 
         const hasError = validationErrors[widget.id];
 
-        return {
-          id: widget.id,
-          r: widget.r,
-          c: widget.c,
-          sheetId: widget.sheetId,
-          passthroughEvents: readonly,
-          node: (
-            <div
-              style={{
-                width: "100%",
-                height: "100%",
-                minHeight,
-                background: "#fff",
-                borderRadius: 8,
-                border: `1px solid ${template.color}`,
-                boxShadow: "0 4px 10px rgba(0,0,0,0.08)",
-                overflow: "hidden",
-                position: "relative",
-                opacity: readonly ? 0.8 : 1,
-              }}
-            >
-              {widget.required && (
-                <span
-                  style={{
-                    position: "absolute",
-                    top: 6,
-                    right: 8,
-                    color: "#ff4d4f",
-                    fontSize: 12,
-                  }}
-                >
-                  *
-                </span>
-              )}
-              {readonly ? (
-                <div
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    padding: "0 10px",
-                    color: template.color,
-                    boxSizing: "border-box",
-                    background: "#fafafa",
-                  }}
-                >
-                  {`${template.label}${widget.required ? " (必填)" : ""}`}
-                </div>
-              ) : (
-                node
-              )}
-              {hasError && (
-                <div
-                  style={{
-                    position: "absolute",
-                    left: 8,
-                    right: 8,
-                    bottom: 4,
-                    color: "#ff4d4f",
-                    fontSize: 11,
-                    lineHeight: "14px",
-                    background: "#fff",
-                  }}
-                >
-                  {hasError}
-                </div>
-              )}
-            </div>
-          ),
-        } as CellWidget;
-      }),
-    [mode, updateWidgetValue, validationErrors, widgets]
-  );
+        const { edit, preview } = getWidgetHeights(widget);
+        const targetHeight = mode === "preview" ? preview : edit;
+
+        return (
+          <div
+            key={widget.id}
+            style={{
+              width: "100%",
+              height: targetHeight,
+              minHeight: 24,
+              background: "#fff",
+              borderRadius: 8,
+              border: `1px solid ${template.color}`,
+              boxShadow: "0 4px 10px rgba(0,0,0,0.08)",
+              overflow: "hidden",
+              position: "relative",
+              opacity: mode === "edit" ? 0.9 : 1,
+              padding: mode === "edit" ? "0 10px" : 0,
+              display: "flex",
+              alignItems: mode === "edit" ? "center" : "stretch",
+              boxSizing: "border-box",
+            }}
+          >
+            {widget.required && (
+              <span
+                style={{
+                  position: "absolute",
+                  top: 6,
+                  right: 8,
+                  color: "#ff4d4f",
+                  fontSize: 12,
+                }}
+              >
+                *
+              </span>
+            )}
+            {mode === "edit" ? (
+              <div style={{ color: template.color, fontWeight: 500, fontSize: 13 }}>
+                {template.label}
+              </div>
+            ) : (
+              node
+            )}
+            {hasError && (
+              <div
+                style={{
+                  position: "absolute",
+                  left: 8,
+                  right: 8,
+                  bottom: 4,
+                  color: "#ff4d4f",
+                  fontSize: 11,
+                  lineHeight: "14px",
+                  background: "#fff",
+                }}
+              >
+                {hasError}
+              </div>
+            )}
+          </div>
+        );
+      });
+
+      const totalHeight = group.items.reduce((sum, item, idx) => {
+        const heights = getWidgetHeights(item);
+        return sum + (mode === "preview" ? heights.preview : heights.edit) + (idx > 0 ? 8 : 0);
+      }, 0);
+
+      return {
+        id: `group-${group.key}`,
+        r: group.cell.r,
+        c: group.cell.c,
+        sheetId: group.cell.sheetId,
+        passthroughEvents: mode === "edit",
+        height: mode === "preview" ? totalHeight : undefined,
+        node: (
+          <div
+            style={{
+              width: "100%",
+              height: "100%",
+              overflowY: mode === "edit" ? "auto" : "visible",
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              padding: mode === "edit" ? 4 : 0,
+              boxSizing: "border-box",
+              background: mode === "edit" ? "#fafafa" : "#fff",
+            }}
+          >
+            {children}
+          </div>
+        ),
+      } as CellWidget;
+    });
+  }, [getWidgetHeights, groupedWidgets, mode, setWidgets, updateWidgetValue, validationErrors]);
 
   const palette = useMemo(
     () =>
@@ -492,6 +604,52 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
     [addWidgetAtSelection]
   );
 
+  const handleGridDoubleClick = useCallback(
+    (event: React.MouseEvent) => {
+      const currentSelection = workbookRef.current?.getSelection();
+      const currentSheetId = getCurrentSheetId();
+      if (!currentSelection?.length || !currentSheetId) return;
+
+      const range = currentSelection[0];
+      const target = { r: range.row[0], c: range.column[0] };
+      const hasWidgets = widgets.some(
+        (w) => w.sheetId === currentSheetId && w.r === target.r && w.c === target.c
+      );
+      if (hasWidgets) {
+        setManagerCell({ ...target, sheetId: currentSheetId });
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    },
+    [getCurrentSheetId, widgets]
+  );
+
+  const managerItems = useMemo(() => {
+    if (!managerCell) return [];
+    return widgets.filter(
+      (w) => w.sheetId === managerCell.sheetId && w.r === managerCell.r && w.c === managerCell.c
+    );
+  }, [managerCell, widgets]);
+
+  const replaceWidget = useCallback(
+    (widgetId: string, templateKey: WidgetTemplateKey) => {
+      setWidgets((prev) =>
+        prev.map((w) =>
+          w.id === widgetId
+            ? {
+                ...w,
+                template: templateKey,
+                value: "",
+                assets: templateKey === "upload" ? [] : undefined,
+                required: templates[templateKey].required,
+              }
+            : w
+        )
+      );
+    },
+    []
+  );
+
   const handleSubmit = useCallback(() => {
     const errors: Record<string, string> = {};
     widgets.forEach((widget) => {
@@ -510,7 +668,7 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
     const values = widgets.map((widget) => ({
       cell: `${String.fromCharCode(65 + widget.c)}${widget.r + 1}`,
       type: templates[widget.template].label,
-      value: widget.value,
+      value: widget.template === "upload" ? widget.assets ?? [] : widget.value,
     }));
     setSubmitResult(JSON.stringify(values, null, 2));
   }, [widgets]);
@@ -587,8 +745,94 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
           </pre>
         )}
       </div>
-      <div style={{ flex: 1, minWidth: 0 }} onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
+      <div
+        style={{ flex: 1, minWidth: 0, position: "relative" }}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={handleDrop}
+        onDoubleClick={handleGridDoubleClick}
+      >
         <Workbook ref={workbookRef} data={data} onChange={onChange} cellWidgets={renderedWidgets} hooks={hooks} />
+        {managerCell && managerItems.length > 0 && (
+          <div
+            style={{
+              position: "absolute",
+              right: 12,
+              top: 12,
+              width: 260,
+              background: "#fff",
+              border: "1px solid #d9d9d9",
+              borderRadius: 8,
+              boxShadow: "0 8px 20px rgba(0,0,0,0.12)",
+              padding: 12,
+              zIndex: 10,
+            }}
+          >
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>单元格组件管理</div>
+            <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>
+              双击单元格进入，可替换或删除其中的组件。
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {managerItems.map((item) => (
+                <div
+                  key={item.id}
+                  style={{
+                    border: "1px solid #f0f0f0",
+                    borderRadius: 6,
+                    padding: 8,
+                    background: "#fafafa",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <span style={{ width: 72, fontSize: 12, color: "#555" }}>组件</span>
+                    <select
+                      value={item.template}
+                      onChange={(e) => replaceWidget(item.id, e.target.value as WidgetTemplateKey)}
+                      style={{ flex: 1, padding: "4px 6px" }}
+                    >
+                      {(Object.keys(templates) as WidgetTemplateKey[]).map((key) => (
+                        <option key={key} value={key}>
+                          {templates[key].label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 72, fontSize: 12, color: "#555" }}>操作</span>
+                    <button
+                      type="button"
+                      onClick={() => removeWidgets((w) => w.id === item.id)}
+                      style={{
+                        padding: "6px 10px",
+                        border: "1px solid #ff7875",
+                        background: "#fff1f0",
+                        color: "#cf1322",
+                        borderRadius: 6,
+                        cursor: "pointer",
+                      }}
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 12, textAlign: "right" }}>
+              <button
+                type="button"
+                onClick={() => setManagerCell(null)}
+                style={{
+                  padding: "6px 12px",
+                  border: "1px solid #d9d9d9",
+                  borderRadius: 6,
+                  background: "#fff",
+                  cursor: "pointer",
+                }}
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        )}
         <div style={{ marginTop: 12, color: "#444", fontSize: 12 }}>
           {selection?.length ? (
             <div>{`当前选区：R${selection[0].row[0] + 1}-R${selection[0].row[1] + 1}, C${selection[0].column[0] + 1}-C${selection[0].column[1] + 1}`}</div>
