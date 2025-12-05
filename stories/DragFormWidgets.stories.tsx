@@ -132,12 +132,25 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
 
   const onChange = useCallback((d: Sheet[]) => setData(d), []);
 
+  const getCurrentSheet = useCallback(() => {
+    try {
+      return workbookRef.current?.getSheet();
+    } catch (err) {
+      console.warn("Unable to resolve current sheet", err);
+      return undefined;
+    }
+  }, []);
+
+  const getCurrentSheetId = useCallback(() => {
+    const sheetId = getCurrentSheet()?.id;
+    return sheetId ?? activeSheetId;
+  }, [activeSheetId, getCurrentSheet]);
+
   useEffect(() => {
     if (!activeSheetId && data.length > 0 && data[0].id) {
       setActiveSheetId(data[0].id);
     }
   }, [activeSheetId, data]);
-
 
   const updateWidgetValue = useCallback((id: string, value: string) => {
     setWidgets((prev) => prev.map((w) => (w.id === id ? { ...w, value } : w)));
@@ -180,7 +193,7 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
   const addWidgetAtSelection = useCallback(
     (templateKey: WidgetTemplateKey) => {
       const currentSelection = workbookRef.current?.getSelection();
-      const currentSheet = workbookRef.current?.getSheet();
+      const currentSheet = getCurrentSheet();
       const sheetId = currentSheet?.id || activeSheetId;
       if (!currentSelection?.length || !sheetId) return;
 
@@ -211,14 +224,14 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
 
   const handleDelete = useCallback(() => {
     const currentSelection = workbookRef.current?.getSelection();
-    const currentSheetId = workbookRef.current?.getSheet()?.id || activeSheetId;
+    const currentSheetId = getCurrentSheetId();
     if (!currentSelection?.length || !currentSheetId) return;
     removeWidgetsInSelection(currentSelection, currentSheetId);
-  }, [activeSheetId, removeWidgetsInSelection]);
+  }, [activeSheetId, getCurrentSheetId, removeWidgetsInSelection]);
 
   const clearSelectionContent = useCallback(() => {
     const currentSelection = workbookRef.current?.getSelection();
-    const currentSheetId = workbookRef.current?.getSheet()?.id || activeSheetId;
+    const currentSheetId = getCurrentSheetId();
     if (!currentSelection?.length || !currentSheetId) return;
 
     currentSelection.forEach((range) => {
@@ -243,11 +256,11 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
   }, [handleDelete]);
 
   useEffect(() => {
-    const currentSheetId = workbookRef.current?.getSheet()?.id;
+    const currentSheetId = getCurrentSheetId();
     if (currentSheetId && currentSheetId !== activeSheetId) {
       setActiveSheetId(currentSheetId);
     }
-  }, [activeSheetId, data]);
+  }, [activeSheetId, data, getCurrentSheetId]);
 
   const hooks = useMemo(
     () => ({
@@ -268,7 +281,7 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
         });
       },
       afterUpdateCell: (row: number, column: number, _oldValue: any, newValue: any) => {
-        const currentSheetId = workbookRef.current?.getSheet()?.id || activeSheetId;
+        const currentSheetId = getCurrentSheetId();
         if (isCellEmpty(newValue) && currentSheetId) {
           removeWidgets((w) => w.sheetId === currentSheetId && w.r === row && w.c === column);
         }
@@ -281,7 +294,7 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
         setActiveSheetId(sheet.id);
       },
     }),
-    [activeSheetId, removeWidgets]
+    [activeSheetId, getCurrentSheetId, removeWidgets]
   );
 
   const renderedWidgets: CellWidget[] = useMemo(
@@ -304,10 +317,8 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
               onMouseDown={stopEvent}
               onDoubleClick={stopEvent}
               onKeyDown={stopEvent}
-
               onChange={(e) => !readonly && updateWidgetValue(widget.id, e.target.value)}
               readOnly={readonly}
-
               style={{
                 width: "100%",
                 height: "100%",
@@ -315,10 +326,8 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
                 borderRadius: 6,
                 padding: "0 8px",
                 boxSizing: "border-box",
-
                 pointerEvents,
                 background: readonly ? "#fafafa" : "#fff",
-
               }}
             />
           );
@@ -330,10 +339,8 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
               onMouseDown={stopEvent}
               onDoubleClick={stopEvent}
               onKeyDown={stopEvent}
-
               onChange={(e) => !readonly && updateWidgetValue(widget.id, e.target.value)}
               disabled={readonly}
-
               style={{
                 width: "100%",
                 height: "100%",
@@ -341,10 +348,8 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
                 borderRadius: 6,
                 padding: "0 8px",
                 boxSizing: "border-box",
-
                 background: readonly ? "#fafafa" : "#fff",
                 pointerEvents,
-
               }}
             >
               <option value="" disabled>
@@ -458,7 +463,6 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
         } as CellWidget;
       }),
     [mode, updateWidgetValue, validationErrors, widgets]
-
   );
 
   const palette = useMemo(

@@ -56,7 +56,6 @@ const CellWidgets: React.FC = () => {
         const [left] = colLocationByIndex(leftCol, context.visibledatacolumn);
         const [, right] = colLocationByIndex(
           rightCol,
-
           context.visibledatacolumn
         );
 
