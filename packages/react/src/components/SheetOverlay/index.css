@@ -952,3 +952,18 @@
   border: 0;
   white-space: nowrap;
 }
+
+.fortune-cell-widgets {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.fortune-cell-widget {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
