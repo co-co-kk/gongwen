@@ -199,8 +199,10 @@ export type CellWidget = {
   /** Additional offset relative to the top-left corner of the target cell. */
   offsetX?: number;
   offsetY?: number;
+
   /** When true, widget overlay will not intercept pointer/keyboard events. */
   passthroughEvents?: boolean;
+
 };
 
 export type LinkCardProps = {

@@ -127,6 +127,7 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
   const [activeSheetId, setActiveSheetId] = useState<string | undefined>(undefined);
   const [submitResult, setSubmitResult] = useState<string>("");
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+
   const [mode, setMode] = useState<"edit" | "preview">("edit");
 
   const onChange = useCallback((d: Sheet[]) => setData(d), []);
@@ -136,6 +137,7 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
       setActiveSheetId(data[0].id);
     }
   }, [activeSheetId, data]);
+
 
   const updateWidgetValue = useCallback((id: string, value: string) => {
     setWidgets((prev) => prev.map((w) => (w.id === id ? { ...w, value } : w)));
@@ -302,8 +304,10 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
               onMouseDown={stopEvent}
               onDoubleClick={stopEvent}
               onKeyDown={stopEvent}
+
               onChange={(e) => !readonly && updateWidgetValue(widget.id, e.target.value)}
               readOnly={readonly}
+
               style={{
                 width: "100%",
                 height: "100%",
@@ -311,8 +315,10 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
                 borderRadius: 6,
                 padding: "0 8px",
                 boxSizing: "border-box",
+
                 pointerEvents,
                 background: readonly ? "#fafafa" : "#fff",
+
               }}
             />
           );
@@ -324,8 +330,10 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
               onMouseDown={stopEvent}
               onDoubleClick={stopEvent}
               onKeyDown={stopEvent}
+
               onChange={(e) => !readonly && updateWidgetValue(widget.id, e.target.value)}
               disabled={readonly}
+
               style={{
                 width: "100%",
                 height: "100%",
@@ -333,8 +341,10 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
                 borderRadius: 6,
                 padding: "0 8px",
                 boxSizing: "border-box",
+
                 background: readonly ? "#fafafa" : "#fff",
                 pointerEvents,
+
               }}
             >
               <option value="" disabled>
@@ -448,6 +458,7 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
         } as CellWidget;
       }),
     [mode, updateWidgetValue, validationErrors, widgets]
+
   );
 
   const palette = useMemo(
