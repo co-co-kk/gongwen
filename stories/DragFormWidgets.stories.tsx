@@ -97,6 +97,29 @@ const findMergeAnchor = (
   return { r: row, c: column };
 };
 
+const findMergeRange = (
+  sheet: Sheet | undefined,
+  row: number,
+  column: number
+): { r: number; c: number; rs: number; cs: number } => {
+  const merge = sheet?.config?.merge;
+  if (!merge) return { r: row, c: column, rs: 1, cs: 1 };
+
+  for (const key of Object.keys(merge)) {
+    const block = merge[key];
+    if (
+      row >= block.r &&
+      row < block.r + block.rs &&
+      column >= block.c &&
+      column < block.c + block.cs
+    ) {
+      return { r: block.r, c: block.c, rs: block.rs, cs: block.cs };
+    }
+  }
+
+  return { r: row, c: column, rs: 1, cs: 1 };
+};
+
 const resolveTargetCells = (ranges: Selection[], sheet: Sheet | undefined) => {
   const targets: { r: number; c: number }[] = [];
   const seen = new Set<string>();
@@ -139,6 +162,7 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [mode, setMode] = useState<"edit" | "preview">("edit");
   const [managerCell, setManagerCell] = useState<{ r: number; c: number; sheetId: string } | null>(null);
+  const defaultRowHeight = 19;
 
   const onChange = useCallback((d: Sheet[]) => setData(d), []);
 
@@ -332,6 +356,92 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
     }
     return { edit: editHeight, preview: previewBase };
   }, []);
+
+  useEffect(() => {
+    const rowHeightsBySheet = new Map<string, Map<number, number>>();
+
+    const getCurrentRowHeight = (sheetId: string, row: number) =>
+      rowHeightsBySheet.get(sheetId)?.get(row) ?? defaultRowHeight;
+
+    const setRowHeightForSheet = (sheetId: string, row: number, height: number) => {
+      const sheetHeights = rowHeightsBySheet.get(sheetId) ?? new Map<number, number>();
+      sheetHeights.set(row, height);
+      rowHeightsBySheet.set(sheetId, sheetHeights);
+    };
+
+    const ensureRangeHeight = (
+      sheetId: string,
+      startRow: number,
+      rowSpan: number,
+      requiredHeight: number
+    ) => {
+      const currentTotal = Array.from({ length: rowSpan }).reduce((sum, _, idx) => {
+        const rowIndex = startRow + idx;
+        return sum + getCurrentRowHeight(sheetId, rowIndex);
+      }, 0);
+
+      if (currentTotal === requiredHeight) return;
+
+      if (currentTotal < requiredHeight) {
+        const extra = requiredHeight - currentTotal;
+        const firstRowHeight = getCurrentRowHeight(sheetId, startRow);
+        setRowHeightForSheet(sheetId, startRow, firstRowHeight + extra);
+      } else {
+        // Shrink only the first row when the current height exceeds the requirement.
+        const excess = currentTotal - requiredHeight;
+        const firstRowHeight = getCurrentRowHeight(sheetId, startRow);
+        setRowHeightForSheet(sheetId, startRow, Math.max(defaultRowHeight, firstRowHeight - excess));
+      }
+    };
+
+    groupedWidgets.forEach((group) => {
+      const sheet = data.find((s) => s.id === group.cell.sheetId);
+      if (!sheet) return;
+
+      const mergeRange = findMergeRange(sheet, group.cell.r, group.cell.c);
+
+      const stackHeight = group.items.reduce((sum, item, idx) => {
+        const heights = getWidgetHeights(item);
+        return sum + (mode === "preview" ? heights.preview : heights.edit) + (idx > 0 ? 8 : 0);
+      }, 0);
+
+      const desiredHeight = Math.max(defaultRowHeight, stackHeight + (mode === "preview" ? 12 : 6));
+
+      ensureRangeHeight(group.cell.sheetId, mergeRange.r, mergeRange.rs, desiredHeight);
+    });
+
+    setData((prev) => {
+      let changed = false;
+      const next = prev.map((sheet) => {
+        const heights = rowHeightsBySheet.get(sheet.id);
+        const newRowlen: Record<string, number> = {};
+        heights?.forEach((height, row) => {
+          newRowlen[row] = height;
+        });
+
+        const currentRowlen = sheet.config?.rowlen ?? {};
+        const sameLength = Object.keys(newRowlen).length === Object.keys(currentRowlen).length;
+        const equal =
+          sameLength &&
+          Object.keys(newRowlen).every(
+            (key) => Number(currentRowlen[key]) === Number(newRowlen[key])
+          );
+
+        if (equal) return sheet;
+
+        changed = true;
+        return {
+          ...sheet,
+          config: {
+            ...(sheet.config ?? {}),
+            rowlen: newRowlen,
+          },
+        };
+      });
+
+      return changed ? next : prev;
+    });
+  }, [data, defaultRowHeight, getWidgetHeights, groupedWidgets, mode]);
 
   const renderedWidgets: CellWidget[] = useMemo(() => {
     return groupedWidgets.map((group) => {
