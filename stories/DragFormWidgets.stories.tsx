@@ -127,6 +127,7 @@ export const DragFormWidgets: StoryFn<typeof Workbook> = () => {
   const [activeSheetId, setActiveSheetId] = useState<string | undefined>(undefined);
   const [submitResult, setSubmitResult] = useState<string>("");
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+
   const [mode, setMode] = useState<"edit" | "preview">("edit");
 
   const onChange = useCallback((d: Sheet[]) => setData(d), []);

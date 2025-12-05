@@ -62,6 +62,7 @@ const CellWidgets: React.FC = () => {
         const width = widget.width ?? right - left - 1;
         const height = widget.height ?? bottom - top - 1;
 
+
         const stopHandler = widget.passthroughEvents ? undefined : stopEvent;
         const pointerEvents = widget.passthroughEvents ? "none" : undefined;
 
@@ -91,3 +92,4 @@ const CellWidgets: React.FC = () => {
 };
 
 export default CellWidgets;
+
